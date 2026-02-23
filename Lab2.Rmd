@@ -34,7 +34,7 @@ library(paran)
 
 
 
-datos<-read.csv("../Movies_2026.csv",stringsAsFactors = F)
+datos<-read.csv("movies_2026.csv",stringsAsFactors = F)
 
 ```
 
