@@ -20,6 +20,8 @@ if(! "fpc" %in% installed.packages()) install.packages("fpc", depend = TRUE)
 if(! "factoextra" %in% installed.packages()) install.packages("factoextra", depend = TRUE)
 if(! "PCAmixdata" %in% installed.packages()) install.packages("PCAmixdata", depend = TRUE)
 if(! "paran" %in% installed.packages()) install.packages("paran", depend = TRUE)
+if(! "dplyr" %in% installed.packages()) install.packages("dplyr", depend = TRUE)
+library(dplyr)
 
 
 library(psych)
@@ -38,3 +40,147 @@ datos<-read.csv("movies_2026.csv",stringsAsFactors = F)
 
 ```
 
+###Análisis de Componentes Principales (PCA)
+
+###3.1 Selección de Variables y Preprocesamiento
+
+```{r}
+# Selección de variables numéricas
+vars_pca <- datos %>%
+  select(popularity,
+         budget,
+         revenue,
+         runtime,
+         voteCount,
+         voteAvg,
+         actorsPopularity,
+         actorsAmount,
+         castWomenAmount,
+         castMenAmount,
+         genresAmount,
+         productionCoAmount,
+         productionCountriesAmount,
+         releaseYear)
+
+# Reemplazar strings vacíos por NA
+vars_pca[vars_pca == ""] <- NA
+
+# Convertir todo a numérico de forma segura
+vars_pca <- data.frame(lapply(vars_pca, function(x) as.numeric(as.character(x))))
+
+# Eliminar filas con NA
+vars_pca <- na.omit(vars_pca)
+
+# Verificar que todo sea numérico
+str(vars_pca)
+
+# Escalar
+vars_scaled <- scale(vars_pca)
+```
+
+###3.2 Matriz de Correlación
+```{r}
+cor_matrix <- cor(vars_scaled)
+corrplot(cor_matrix, method = "color")
+```
+En la matriz de correlación se observan asociaciones importantes entre varias variables del conjunto de datos. Destaca una correlación positiva entre budget y revenue, lo cual es consistente con la lógica de la industria cinematográfica: producciones con mayor presupuesto tienden a generar mayores ingresos.
+
+También se observa relación entre voteCount, popularity y actorsPopularity, lo que sugiere que películas con mayor visibilidad tienden a recibir más votos.
+
+Asimismo, existe alta correlación entre actorsAmount, castMenAmount y castWomenAmount, lo cual es esperado debido a que representan componentes del tamaño total del elenco.
+
+Estas correlaciones evidencian redundancia entre variables, lo que justifica la aplicación del Análisis de Componentes Principales para reducir la dimensionalidad del conjunto de datos.
+
+
+
+
+###3.3 Medida de Adecuación Muestral (Índice KMO)
+```{r}
+KMO(vars_scaled)
+```
+
+El índice KMO global obtenido fue de 0.69, lo cual indica una adecuación muestral aceptable para aplicar el Análisis de Componentes Principales.
+
+Según la clasificación de Kaiser:
+	•	0.90 → Excelente
+	•	0.80 → Muy bueno
+	•	0.70 → Bueno
+	•	0.60 → Aceptable
+	•	<0.50 → Inadecuado
+
+En este caso, el valor se encuentra cercano a 0.70, lo que sugiere que las correlaciones parciales entre variables no son excesivamente altas y que el análisis factorial es apropiado, aunque no óptimo.
+
+
+
+
+
+###3.4 Prueba de Esfericidad de Bartlett
+```{r}
+cortest.bartlett(cor_matrix, n = nrow(vars_scaled))
+```
+La prueba de esfericidad de Bartlett resultó altamente significativa (χ² = 5416.44, p < 0.001), lo que permite rechazar la hipótesis nula de que la matriz de correlación es una matriz identidad.
+
+Esto confirma que existe correlación suficiente entre las variables y que el Análisis de Componentes Principales es apropiado para este conjunto de datos.
+
+
+
+###3.5 Aplicación del Análisis de Componentes Principales
+```{r}
+pca_model <- prcomp(vars_scaled, center = TRUE, scale. = TRUE)
+
+summary(pca_model)
+```
+
+
+##3.6 Determinación del Número de Componentes (Scree Plot y Varianza Explicada)
+```{r}
+fviz_eig(pca_model, addlabels = TRUE)
+```
+
+```{r}
+eigenvalues <- pca_model$sdev^2
+eigenvalues
+```
+El primer componente principal explica el 24.3% de la variabilidad total, seguido por el segundo con 12.6% y el tercero con 10.2%.
+
+El gráfico de sedimentación muestra una disminución pronunciada después del tercer componente y una estabilización progresiva a partir del quinto componente.
+
+Se decidió conservar los primeros 7 componentes, ya que explican aproximadamente el 74.7% de la variabilidad total, lo cual representa una reducción considerable de dimensionalidad manteniendo una proporción adecuada de información.
+
+
+
+
+###3.7 Interpretación de los Componentes Principales
+```{r}
+loadings <- pca_model$rotation
+round(loadings, 3)
+```
+```{r}
+fviz_pca_biplot(pca_model, 
+                repel = TRUE,
+                col.var = "red",
+                col.ind = "gray")
+```
+El primer componente parece representar una dimensión de impacto y visibilidad comercial, ya que agrupa variables relacionadas con popularidad, número de votos y popularidad del elenco.
+
+La carga negativa en releaseYear sugiere que películas más antiguas tienden a tener mayor acumulación de popularidad y votos, lo cual puede deberse a mayor tiempo en el mercado.
+
+
+
+
+###3.8 Conclusiones del PCA
+
+
+El Análisis de Componentes Principales permitió reducir la dimensionalidad del conjunto de datos original compuesto por 14 variables numéricas, sintetizando la información en un menor número de componentes sin perder una proporción significativa de variabilidad.
+
+Los primeros 7 componentes explican aproximadamente el 74.7% de la variabilidad total, lo cual representa una reducción considerable de la complejidad del dataset manteniendo la mayor parte de la información relevante.
+
+El primer componente principal se asocia principalmente con variables relacionadas con popularidad, número de votos y popularidad del elenco, por lo que puede interpretarse como una dimensión de impacto y desempeño comercial.
+
+El segundo componente está vinculado con la composición del elenco, diferenciando películas según la cantidad y distribución de actores.
+
+El tercer componente refleja características estructurales de producción, como el número de compañías productoras y países involucrados, lo cual sugiere distintos niveles de complejidad en las producciones cinematográficas.
+
+En conjunto, el PCA revela que las películas pueden caracterizarse principalmente a través de tres grandes dimensiones: impacto comercial, estructura del elenco y complejidad de producción.
+
+Estos resultados son útiles para CineVision Studios, ya que permiten comprender cuáles factores explican mayor variabilidad en el mercado cinematográfico y pueden servir como base para futuros modelos predictivos o segmentaciones estratégicas.
