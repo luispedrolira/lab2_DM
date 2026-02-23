@@ -1,0 +1,251 @@
+---
+title: "PCA"
+author: "Msc. Lynette García"
+date: "2025-02-07"
+output: html_document
+editor_options: 
+  markdown: 
+    wrap: sentence
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,message = F, warning = F)
+```
+
+```{r paquetes y datos}
+if(! "psych" %in% installed.packages()) install.packages("psych", depend = TRUE)
+if(! "FactoMineR" %in% installed.packages()) install.packages("FactoMineR", depend = TRUE)
+if(! "corrplot" %in% installed.packages()) install.packages("corrplot", depend = TRUE)
+if(! "fpc" %in% installed.packages()) install.packages("fpc", depend = TRUE)
+if(! "factoextra" %in% installed.packages()) install.packages("factoextra", depend = TRUE)
+if(! "PCAmixdata" %in% installed.packages()) install.packages("PCAmixdata", depend = TRUE)
+if(! "paran" %in% installed.packages()) install.packages("paran", depend = TRUE)
+
+
+library(psych)
+library(FactoMineR)
+library(fpc)
+library(factoextra)
+library(corrplot)
+library(PCAmixdata)
+library(paran)
+
+
+
+
+
+datos<-read.csv("../Datos/Ejemplo.csv",stringsAsFactors = F)
+
+```
+
+## Descripción de los datos
+
+El análisis se realizó sobre una muestra de **41 ciudades de EE.UU.**, evaluando variables relacionadas con la **contaminación atmosférica** y factores ambientales.
+A continuación, se describen las variables incluidas en el estudio:
+
+------------------------------------------------------------------------
+
+| **Variable**  | **Descripción**                                                                       |
+|---------------|---------------------------------------------------------------------------------------|
+| **SO2**       | Concentración de **dióxido de azufre (SO₂)** en el aire (indicador de contaminación). |
+| **Neg.Temp**  | Temperatura anual promedio en grados Fahrenheit **negativa**.                         |
+| **Empresas**  | Número de **empresas** con más de 20 empleados en la ciudad.                          |
+| **Población** | **Población total** de la ciudad (en miles de habitantes).                            |
+| **Viento**    | **Velocidad media del viento** (en millas por hora).                                  |
+| **Precip**    | **Precipitación anual promedio** (en pulgadas).                                       |
+| **Días**      | Número de **días lluviosos** en el año.                                               |
+
+------------------------------------------------------------------------
+
+### **Interpretación de las Variables**
+
+-   **SO2** Con esta variable se busca identificar cómo se relaciona con las demás variables ambientales y económicas.\
+-   **Neg.Temp, Precip y Días** están asociadas a condiciones climáticas que pueden afectar la dispersión de contaminantes.\
+-   **Empresas y Población** reflejan la actividad económica y urbana, factores clave en la generación de contaminación.\
+-   **Viento** puede influir en la dispersión de contaminantes como el SO₂.
+
+### ¿Vale la pena aplicar PCA?
+
+Lo primero que vamos a hacer es calcular el determinante de la matriz de correlación.
+Si este es cercano a 0 significa que hay multicolinealidad, las variables están relacionadas.
+
+```{r matriz de correlación}
+rcor<-cor(datos[,2:8],use = "pairwise.complete.obs")
+```
+
+El determinante es: `r det(rcor)` .
+Podemos decir que las variables sí están relacionadas entre sí.
+
+#### KMO.
+
+Se debe analizar si se puede usar el análisis factorial para formar las combinaciones lineales de las variables
+
+```{r KMO}
+KMO(as.matrix(datos[,2:8]))
+```
+
+El índice es menor a 0.5, por lo que la adecuación muestral para un análisis factorial es inaceptable.
+Probablemente esto nos indique que no voy a tener buenos resultados haciendo el PCA, no obstante vamos a seguir.
+
+#### Test de esfericidaad de Bartlett.
+
+H0: la matriz de correlaciones es igual a la matriz identidad.\
+Se busca rechazar la hipótesis nula de que la matriz es diferente a la matriz identidad y por ende, suficiente multicolinealidad entre las variables.
+En una matriz de identidad la diagonal es 1, y los valores fuera de la diagonal son 0.
+Esto implica que no hay más colinealidad entre las variables que la que hay entre cada variable consigo misma.
+
+```{r Bartlett}
+cortest.bartlett(datos[,-1])
+
+```
+
+El valor p es de 6.87\*10-31 lo que lo hace muy pequeño mucho menor a 0.05, esto nos dice que el análisis factorial si podría funcionar
+
+#### Matriz de correlación.
+
+En la figura se puede observar que el dioxido de azufre está correlacionado con las empresas que tienen más de 20 personas trabajando y posiblemente con la población del lugar, a su vez estás dos últimas están altamente relacionadas entre sí.
+
+```{r matriz de correlacion}
+matriz <- cor(datos[,-1],use = "pairwise.complete.obs")
+corrplot(matriz)
+
+```
+
+### PCA.
+
+Para hacer el análisis de componentes principales es necesario normalizar los datos.
+Esta función lo hace de una vez.
+
+```{r PCA}
+compPrinc<-prcomp(datos[,2:8], scale = T)
+compPrinc
+```
+
+El resumen del modelo es el siguiente:
+
+```{r}
+summary(compPrinc)
+```
+
+### Selección de componentes
+
+#### Regla de Kaiser
+
+Los valores propios de los 6 componentes son los siguientes:
+
+```{r}
+valores_propios<-compPrinc$sdev^2
+valores_propios
+```
+
+Según la regla de Kaiser debemos quedarnos con los componentes que tienen valores propios mayor a 1, por lo que nos quedaríamos con las primeras 3 componentes.
+
+#### Gráfico de sedimentación (Scree Plot)
+
+Según el gráfico de sedimentación después de las primeras 3 componentes se estabiliza "el codo".
+
+```{r screeplot}
+fviz_eig(compPrinc, addlabels = TRUE, ylim = c(0, 80))
+fviz_eig(compPrinc, addlabels = TRUE, choice = c("eigenvalue"), ylim = c(0, 3))
+
+```
+
+#### Porcentaje de Varianza Explicada.
+
+Con las primeras 3 componentes logra explicarse el 80% de la varianza del conjunto de datos.
+
+```{r varianza explicada}
+summary(compPrinc)
+```
+
+### Prueba de Paralelismo (Horn's Parallel Analysis)
+
+##### ¿Cómo funciona la Prueba de Paralelismo de Horn?
+
+Se calculan los valores propios del PCA basado en los datos reales.
+Se generan múltiples conjuntos de datos aleatorios con el mismo tamaño que los datos originales (mismo número de variables y observaciones).
+Se realiza un PCA sobre los datos aleatorios y se extraen los valores propios esperados de cada componente.
+Se comparan los valores propios reales con los esperados: Si un componente tiene un valor propio mayor que el de los datos simulados, significa que explica más varianza de la que se esperaría por azar, por lo que se retiene.
+Si el valor propio es menor o igual al de los datos aleatorios, el componente no se retiene porque su explicación de varianza es insignificante.
+
+En los resultados de esta prueba los valores simulados son los de la columna "Adjusted Eigenvalue" y los valores reales son "Unadjusted Eigenvalue".
+Para los primeros 3 componentes el valor propio real es mayor que el simulado, por lo que pueden seleccionarse.
+
+```{r prueba de Horn}
+
+paran(datos[,-1], graph=TRUE)
+```
+
+### Carga Factorial Interpretativa
+
+Se basa en la interpretación de los componentes.
+
+En la siguiente gráfica se ilustra la calidad de la representación de los componentes en las dos primeras dimensiones.
+
+```{r grafico coseno}
+fviz_pca_var(compPrinc, col.var = "cos2",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"), 
+             repel = TRUE # Avoid text overlapping
+)
+
+```
+
+**Interpretación del Gráfico de PCA:**
+
+Representa la relación entre las variables originales proyectadas en el espacio de los dos primeros componentes principales (Dim1 y Dim2).
+Vamos a analizarlo paso a paso.
+
+1.  Ejes del gráfico Eje X (Dim1 - 39%): Representa el primer componente principal (PC1), que explica el 39% de la varianza total de los datos. Eje Y (Dim2 - 21.6%): Representa el segundo componente principal (PC2), que explica el 21.6% de la varianza.
+
+**Interpretación**\*: En conjunto, los dos primeros componentes explican aproximadamente el 60.6% de la variabilidad total de los datos.
+Esto indica que la mayor parte de la información está capturada en estas dos dimensiones.
+
+2.  Longitud de las Flechas (Vectores) Cada flecha representa una variable original. La longitud de la flecha indica qué tan bien está representada la variable en el espacio de PC1 y PC2.
+
+Flechas largas (Ejemplo: "Días", "Empresas", "Población"): Indican que estas variables están bien representadas en los primeros dos componentes.
+Flechas cortas (Ejemplo: "Viento"): Indican que esta variable no está completamente explicada por PC1 y PC2 y puede necesitar más dimensiones para su interpretación.
+
+3.  Dirección de las Flechas Las variables con vectores apuntando en la misma dirección están correlacionadas positivamente.
+
+Ejemplo: "Empresas" y "Población" están muy correlacionadas positivamente.
+Esto sugiere que las áreas con mayor población también tienen más empresas.
+Ejemplo: "Días" y "Empresas" también están correlacionadas en cierta medida.
+Las variables con vectores opuestos tienen una correlación negativa.
+
+Ejemplo: "Neg.Temp" (Temperatura negativa) apunta en dirección opuesta a "Días".
+Esto sugiere que cuando hay más días (posiblemente días de contaminación o actividad), las temperaturas negativas son menores.
+Las variables con vectores perpendiculares (ángulo de 90°) están débilmente correlacionadas o no tienen relación.
+
+Ejemplo: "Viento" es casi perpendicular a "Empresas", lo que sugiere que el viento no tiene una relación directa con el número de empresas.
+
+4.  Color de las Flechas (cos2 - Calidad de Representación) El color indica el cos2, que mide la calidad de la representación de cada variable en el espacio de los componentes.
+
+Colores cálidos (rojo/naranja): Variables bien representadas en los primeros dos componentes.
+Ejemplo: "Días", "Empresas", "Población" tienen un cos2 alto (\> 0.8), lo que indica que están bien explicadas por PC1 y PC2.
+Colores fríos (azul/verde): Variables poco representadas, lo que sugiere que necesitan más dimensiones para su correcta interpretación.
+Ejemplo: "Viento" tiene un cos2 bajo, lo que significa que su variabilidad no está bien explicada en estos dos primeros componentes.
+
+5.  Relación con los Componentes Principales PC1 (Dim1 - 39%) parece estar asociado a la actividad económica y poblacional, ya que variables como "Empresas" y "Población" tienen fuertes cargas en esta dimensión. PC2 (Dim2 - 21.6%) parece estar relacionado con factores ambientales y climáticos, ya que "Precipitación" y "Neg.Temp" tienen cargas en esta dimensión.
+
+```{r contribucion a las componentes}
+
+fviz_contrib(compPrinc, choice = "var", axes = 1, top = 10) #Dimensión 1
+fviz_contrib(compPrinc, choice = "var", axes = 2, top = 10) #Dimensión 2
+fviz_contrib(compPrinc, choice = "var", axes = 3, top = 10) #Dimensión 3
+
+var<-get_pca_var(compPrinc)
+corrplot(var$cos2, is.corr = F)
+
+```
+
+Conclusión General Las variables "Empresas", "Población" y "Días" están bien representadas en los dos primeros componentes y parecen estar relacionadas con actividad económica.
+"Precipitación" y "Neg.Temp" están asociadas a PC2, lo que sugiere una dimensión climática.
+"Viento" y "SO2" no están bien explicadas por PC1 y PC2 y podrían requerir análisis en dimensiones adicionales.
+
+## Interpretación de las Componentes
+
+1.  El primer componente principal (PC1) se interpreta como un indicador de calidad de vida, donde valores negativos altos en Empresas y Población sugieren un entorno urbano más denso y potencialmente más contaminado.
+
+2.  El segundo componente (PC2) se asocia con el clima húmedo, ya que tiene altas cargas en Precipitación y Días de lluvia.
+
+3.  El tercer componente (PC3) parece estar relacionado con el tipo de clima, vinculado con la temperatura y la cantidad de lluvia.
