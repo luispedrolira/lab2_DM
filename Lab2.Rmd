@@ -21,7 +21,14 @@ if(! "factoextra" %in% installed.packages()) install.packages("factoextra", depe
 if(! "PCAmixdata" %in% installed.packages()) install.packages("PCAmixdata", depend = TRUE)
 if(! "paran" %in% installed.packages()) install.packages("paran", depend = TRUE)
 if(! "dplyr" %in% installed.packages()) install.packages("dplyr", depend = TRUE)
-library(dplyr)
+if(! "tidyverse" %in% installed.packages()) install.packages("tidyverse", depend = TRUE)
+if(! "janitor" %in% installed.packages()) install.packages("janitor", depend = TRUE)
+if(! "lubridate" %in% installed.packages()) install.packages("lubridate", depend = TRUE)
+if(! "skimr" %in% installed.packages()) install.packages("skimr", depend = TRUE)
+if(! "clustertend" %in% installed.packages()) install.packages("clustertend", depend = TRUE)
+if(! "factoextra" %in% installed.packages()) install.packages("factoextra", depend = TRUE)
+if(! "cluster" %in% installed.packages()) install.packages("cluster", depend = TRUE)
+
 
 
 library(psych)
@@ -31,13 +38,27 @@ library(factoextra)
 library(corrplot)
 library(PCAmixdata)
 library(paran)
+library(dplyr)
+library(tidyverse)
+library(janitor)
+library(lubridate)
+library(skimr)
+library(clustertend)
+library(factoextra)
+library(cluster)
 
 
 
 
 
-datos<-read.csv("movies_2026.csv",stringsAsFactors = F)
+data_path <- "movies_2026.csv"   # <- por ejemplo
 
+# Intenta leer CSV; si usas otro formato (RDS/Excel), cambia este bloque.
+df_raw <- readr::read_csv(data_path, show_col_types = FALSE) |> 
+  janitor::clean_names()
+
+glimpse(df_raw)
+skimr::skim(df_raw)
 ```
 
 ###Análisis de Componentes Principales (PCA)
@@ -184,3 +205,170 @@ El tercer componente refleja características estructurales de producción, como
 En conjunto, el PCA revela que las películas pueden caracterizarse principalmente a través de tres grandes dimensiones: impacto comercial, estructura del elenco y complejidad de producción.
 
 Estos resultados son útiles para CineVision Studios, ya que permiten comprender cuáles factores explican mayor variabilidad en el mercado cinematográfico y pueden servir como base para futuros modelos predictivos o segmentaciones estratégicas.
+
+```{r Seleccion de variables}
+# Variables del PDF (posibles) incluyen: popularity, budget, revenue, runtime, vote_count, vote_avg,
+# actors_popularity, genres_amount, production_co_amount, production_countries_amount,
+# actors_amount, cast_women_amount, cast_men_amount, release_year, etc. :contentReference[oaicite:2]{index=2}
+
+# 1) Variables típicamente NO útiles para formar grupos (IDs / texto libre / URLs / listas enormes):
+vars_drop_if_exist <- c(
+  "id", "original_title", "title", "homepage",
+  "director", "actors", "actors_character",
+  "production_company", "production_company_country",
+  "production_country", "release_date"
+)
+
+df <- df_raw |> select(-any_of(vars_drop_if_exist))
+
+# 2) Define con qué variables numéricas vas a calcular los grupos (ajusta si tu dataset difiere)
+vars_num_raw <- c(
+  "popularity", "budget", "revenue", "runtime",
+  "vote_count", "vote_avg", "actors_popularity",
+  "genres_amount", "production_co_amount", "production_countries_amount",
+  "actors_amount", "cast_women_amount", "cast_men_amount",
+  "release_year"
+)
+
+# Qué variables de esas realmente existen en tu df:
+vars_num <- intersect(vars_num_raw, names(df))
+vars_missing <- setdiff(vars_num_raw, names(df))
+
+cat("Numéricas usadas para clustering:\n")
+print(vars_num)
+cat("\nNuméricas NO encontradas (si esperabas verlas, revisa nombres):\n")
+print(vars_missing)
+
+# Deja solo filas con al menos algunas variables disponibles
+stopifnot(length(vars_num) >= 4)
+
+df_num <- df |> select(all_of(vars_num))
+
+# Asegurar numéricas (por si quedaron como character)
+df_num <- df_num |> mutate(across(everything(), ~ suppressWarnings(as.numeric(.x))))
+
+# Imputación simple: medianas por columna (rápido y estable para clustering)
+impute_median <- function(x){
+  ifelse(is.na(x), median(x, na.rm = TRUE), x)
+}
+df_num_imp <- df_num |> mutate(across(everything(), impute_median))
+
+# Transformaciones para colas largas (muy típico en budget/revenue/vote_count/popularity)
+vars_log1p <- intersect(c("budget", "revenue", "vote_count", "popularity", "actors_popularity"), vars_num)
+df_num_tr <- df_num_imp |> mutate(across(all_of(vars_log1p), ~ log1p(pmax(.x, 0))))
+
+# Estandarización (k-means y distancias lo necesitan)
+X <- scale(df_num_tr)
+X <- as.matrix(X)
+
+cat("Dimensiones de X (filas, columnas):\n")
+print(dim(X))
+```
+
+```{r Hopkins}
+
+set.seed(123)
+
+# Hopkins en muestra (rápido)
+idx_hop <- sample(seq_len(nrow(X)), min(3000, nrow(X)))
+X_hop <- X[idx_hop, , drop = FALSE]
+n_hop <- min(200, floor(0.1 * nrow(X_hop)))
+
+hop <- clustertend::hopkins(X_hop, n = n_hop)
+hop
+```
+
+```{r Grafica de Codo}
+k_max <- 12
+
+# Codo (WSS) - requisito :contentReference[oaicite:4]{index=4}
+factoextra::fviz_nbclust(X, kmeans, method = "wss", k.max = k_max) +
+  ggtitle("Método del codo (WSS)")
+
+# (Opcional pero útil) Silhouette vs k para apoyar tu decisión
+factoextra::fviz_nbclust(X[sample(nrow(X), min(3000, nrow(X))), ], kmeans,
+                         method = "silhouette", k.max = k_max) +
+  ggtitle("Apoyo: Silhouette promedio vs k (muestra)")
+```
+
+```{r Elegir el K}
+# Para que el flujo sea "óptimo" sin adivinar, elegimos k por silhouette promedio en muestra
+# (y en el reporte justificas con el codo + esta evidencia).
+n_k <- min(4000, nrow(X))
+idx_k <- sample(seq_len(nrow(X)), n_k)
+X_k <- X[idx_k, , drop = FALSE]
+
+avg_sil_by_k <- function(k){
+  km <- kmeans(X_k, centers = k, nstart = 30, iter.max = 100)
+  d  <- dist(X_k)
+  sil <- cluster::silhouette(km$cluster, d)
+  mean(sil[, 3])
+}
+
+ks <- 2:k_max
+sil_vals <- sapply(ks, avg_sil_by_k)
+
+sil_tbl <- tibble(k = ks, avg_silhouette = sil_vals)
+sil_tbl |> arrange(desc(avg_silhouette)) |> head(10)
+
+k_star <- sil_tbl |> arrange(desc(avg_silhouette)) |> slice(1) |> pull(k)
+cat("k elegido (por silhouette en muestra):", k_star, "\n")
+```
+
+```{r Agrupamiento}
+# K-means en TODO el dataset
+km_fit <- kmeans(X, centers = k_star, nstart = 50, iter.max = 200)
+
+df_km <- df |> mutate(cluster_kmeans = factor(km_fit$cluster))
+
+# Jerárquico: por complejidad O(n^2), lo hacemos en muestra (suficiente para comparar estructura)
+n_hc <- min(3000, nrow(X))
+idx_hc <- sample(seq_len(nrow(X)), n_hc)
+X_hc <- X[idx_hc, , drop = FALSE]
+
+d_hc <- dist(X_hc)
+hc_fit <- hclust(d_hc, method = "ward.D2")
+hc_clusters <- cutree(hc_fit, k = k_star)
+
+df_hc <- df[idx_hc, ] |> mutate(cluster_hc = factor(hc_clusters))
+
+# Dendrograma (opcional, puede ser grande)
+plot(hc_fit, labels = FALSE, main = "Clustering jerárquico (Ward.D2) - muestra")
+rect.hclust(hc_fit, k = k_star, border = 2:6)
+```
+
+```{r Silueta}
+# Silueta kmeans (en la muestra jerárquica para comparar apples-to-apples)
+km_sample_clusters <- km_fit$cluster[idx_hc]
+sil_km <- cluster::silhouette(km_sample_clusters, d_hc)
+avg_sil_km <- mean(sil_km[, 3])
+
+# Silueta jerárquico (en la misma muestra)
+sil_hc <- cluster::silhouette(hc_clusters, d_hc)
+avg_sil_hc <- mean(sil_hc[, 3])
+
+cat("Silhouette promedio (k-means, muestra):", round(avg_sil_km, 4), "\n")
+cat("Silhouette promedio (jerárquico, muestra):", round(avg_sil_hc, 4), "\n")
+
+# Visualizar siluetas
+factoextra::fviz_silhouette(sil_km) + ggtitle("Silueta - k-means (muestra)")
+factoextra::fviz_silhouette(sil_hc) + ggtitle("Silueta - Jerárquico (muestra)")
+```
+```{r}
+# Silueta kmeans (en la muestra jerárquica para comparar apples-to-apples)
+km_sample_clusters <- km_fit$cluster[idx_hc]
+sil_km <- cluster::silhouette(km_sample_clusters, d_hc)
+avg_sil_km <- mean(sil_km[, 3])
+
+# Silueta jerárquico (en la misma muestra)
+sil_hc <- cluster::silhouette(hc_clusters, d_hc)
+avg_sil_hc <- mean(sil_hc[, 3])
+
+cat("Silhouette promedio (k-means, muestra):", round(avg_sil_km, 4), "\n")
+cat("Silhouette promedio (jerárquico, muestra):", round(avg_sil_hc, 4), "\n")
+
+# Visualizar siluetas
+factoextra::fviz_silhouette(sil_km) + ggtitle("Silueta - k-means (muestra)")
+factoextra::fviz_silhouette(sil_hc) + ggtitle("Silueta - Jerárquico (muestra)")
+```
+
