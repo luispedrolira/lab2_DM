@@ -12,30 +12,15 @@ editor_options:
 knitr::opts_chunk$set(echo = TRUE,message = F, warning = F)
 ```
 
-```{r paquetes y datos}
-if(! "psych" %in% installed.packages()) install.packages("psych", depend = TRUE)
-if(! "FactoMineR" %in% installed.packages()) install.packages("FactoMineR", depend = TRUE)
-if(! "corrplot" %in% installed.packages()) install.packages("corrplot", depend = TRUE)
-if(! "fpc" %in% installed.packages()) install.packages("fpc", depend = TRUE)
-if(! "factoextra" %in% installed.packages()) install.packages("factoextra", depend = TRUE)
-if(! "PCAmixdata" %in% installed.packages()) install.packages("PCAmixdata", depend = TRUE)
-if(! "paran" %in% installed.packages()) install.packages("paran", depend = TRUE)
-if(! "dplyr" %in% installed.packages()) install.packages("dplyr", depend = TRUE)
-if(! "tidyverse" %in% installed.packages()) install.packages("tidyverse", depend = TRUE)
-if(! "janitor" %in% installed.packages()) install.packages("janitor", depend = TRUE)
-if(! "lubridate" %in% installed.packages()) install.packages("lubridate", depend = TRUE)
-if(! "skimr" %in% installed.packages()) install.packages("skimr", depend = TRUE)
-if(! "clustertend" %in% installed.packages()) install.packages("clustertend", depend = TRUE)
-if(! "factoextra" %in% installed.packages()) install.packages("factoextra", depend = TRUE)
-if(! "cluster" %in% installed.packages()) install.packages("cluster", depend = TRUE)
 
 
+```{r paquetes y datos, message=FALSE, warning=FALSE}
 
 library(psych)
 library(FactoMineR)
+library(corrplot)
 library(fpc)
 library(factoextra)
-library(corrplot)
 library(PCAmixdata)
 library(paran)
 library(dplyr)
@@ -44,22 +29,11 @@ library(janitor)
 library(lubridate)
 library(skimr)
 library(clustertend)
-library(factoextra)
 library(cluster)
 
-
-
-
-
-data_path <- "movies_2026.csv"   # <- por ejemplo
-
-# Intenta leer CSV; si usas otro formato (RDS/Excel), cambia este bloque.
-df_raw <- readr::read_csv(data_path, show_col_types = FALSE) |> 
-  janitor::clean_names()
-
-glimpse(df_raw)
-skimr::skim(df_raw)
+datos <- read.csv("movies_2026.csv", stringsAsFactors = FALSE)
 ```
+
 
 ###Análisis de Componentes Principales (PCA)
 
@@ -219,7 +193,7 @@ vars_drop_if_exist <- c(
   "production_country", "release_date"
 )
 
-df <- df_raw |> select(-any_of(vars_drop_if_exist))
+df <- datos |> select(-any_of(vars_drop_if_exist))
 
 # 2) Define con qué variables numéricas vas a calcular los grupos (ajusta si tu dataset difiere)
 vars_num_raw <- c(
