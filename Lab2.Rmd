@@ -2,14 +2,20 @@
 title: "Laboratorio 2"
 author: "Luis Pedro Lira 23669, Mario Rocha 23501, Juan Francisco Martínez 23617"
 date: "2025-02-07"
-output: html_document
-editor_options: 
-  markdown: 
+output:
+  pdf_document:
+    latex_engine: xelatex
+editor_options:
+  markdown:
     wrap: sentence
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE,message = F, warning = F)
+knitr::opts_chunk$set(
+  echo = FALSE,      # no muestra código
+  message = FALSE,   # no muestra mensajes
+  warning = FALSE    # no muestra warnings
+)
 ```
 
 
@@ -39,7 +45,7 @@ datos <- read.csv("movies_2026.csv", stringsAsFactors = FALSE)
 
 ###3.1 Selección de Variables y Preprocesamiento
 
-```{r}
+```{r include = FALSE}
 # Selección de variables numéricas
 vars_pca <- datos %>%
   select(popularity,
@@ -90,7 +96,7 @@ Estas correlaciones evidencian redundancia entre variables, lo que justifica la 
 
 
 ###3.3 Medida de Adecuación Muestral (Índice KMO)
-```{r}
+```{r results='hide'}
 KMO(vars_scaled)
 ```
 
@@ -113,14 +119,14 @@ En este caso, el valor se encuentra cercano a 0.70, lo que sugiere que las corre
 ```{r}
 cortest.bartlett(cor_matrix, n = nrow(vars_scaled))
 ```
-La prueba de esfericidad de Bartlett resultó altamente significativa (χ² = 5416.44, p < 0.001), lo que permite rechazar la hipótesis nula de que la matriz de correlación es una matriz identidad.
+La prueba de esfericidad de Bartlett resultó altamente significativa ($\chi^2 = 5416.44$ p < 0.001), lo que permite rechazar la hipótesis nula de que la matriz de correlación es una matriz identidad.
 
 Esto confirma que existe correlación suficiente entre las variables y que el Análisis de Componentes Principales es apropiado para este conjunto de datos.
 
 
 
 ###3.5 Aplicación del Análisis de Componentes Principales
-```{r}
+```{r }
 pca_model <- prcomp(vars_scaled, center = TRUE, scale. = TRUE)
 
 summary(pca_model)
@@ -328,6 +334,7 @@ cat("Silhouette promedio (jerárquico, muestra):", round(avg_sil_hc, 4), "\n")
 factoextra::fviz_silhouette(sil_km) + ggtitle("Silueta - k-means (muestra)")
 factoextra::fviz_silhouette(sil_hc) + ggtitle("Silueta - Jerárquico (muestra)")
 ```
+
 ```{r}
 # Silueta kmeans (en la muestra jerárquica para comparar apples-to-apples)
 km_sample_clusters <- km_fit$cluster[idx_hc]
