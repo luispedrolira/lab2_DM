@@ -361,4 +361,108 @@ A nivel de estructura de clusters, ambos métodos identifican al menos un grupo 
 
 El dendrograma sí aporta una ventaja interpretativa: permite ver fusiones y posibles macrogrupos, útil si el objetivo fuera explorar segmentaciones en varios niveles. Pero dado que el objetivo del laboratorio es obtener una partición final e interpretable, y considerando la mejor silueta promedio, menos asignaciones negativas, y la ausencia de clusters degenerados, se selecciona k-means como el método principal para la interpretación final de clusters; el jerárquico se mantiene como referencia complementaria para validar que existe estructura y para explorar agrupamientos alternativos.
 
+En esta sección se interpreta cada cluster perfilándolo con dos tipos de evidencia: variables numéricas (medias y medianas por cluster) para describir magnitud y desempeño, y  variables categóricas para identificar características comunes dentro de cada grupo . La idea es transformar la salida del algoritmo en segmentos “entendibles” y accionables para CineVision Studios: identificar grupos de películas con comportamiento similar, y así apoyar decisiones de catálogo, marketing o inversión.
+
+```{r}
+# --- 0) Asegurar objetos base ---
+if(!exists("df")){
+  if(exists("datos")) df <- datos else stop("No encuentro 'df' ni 'datos'.")
+}
+if(!exists("X")) stop("No encuentro la matriz 'X' (scaled) usada para clustering.")
+if(!exists("k_star")) k_star <- 7  # por si ya definiste k=7 y no guardaste la variable
+
+set.seed(123)
+if(!exists("km_fit")){
+  km_fit <- kmeans(X, centers = k_star, nstart = 50, iter.max = 200)
+}
+
+df_km <- df |> dplyr::mutate(cluster = factor(km_fit$cluster))
+
+# --- 1) Resumen de tamaños por cluster ---
+cluster_sizes <- df_km |> dplyr::count(cluster, name = "n") |> dplyr::arrange(cluster)
+cluster_sizes
+
+# --- 2) Perfil NUMÉRICO por cluster (media/mediana/sd) ---
+# (usa solo numéricas reales presentes)
+num_vars <- names(df_km)[sapply(df_km, is.numeric)]
+num_vars <- setdiff(num_vars, c())  # por si quieres excluir algo luego
+
+# Si quieres priorizar variables "clave", ponlas aquí (solo se usarán si existen)
+key_vars_raw <- c("popularity","budget","revenue","runtime","voteCount","voteAvg",
+                  "actorsPopularity","actorsAmount","castWomenAmount","castMenAmount",
+                  "genresAmount","productionCoAmount","productionCountriesAmount","releaseYear")
+key_vars <- intersect(key_vars_raw, num_vars)
+
+# a) Tabla completa (puede ser grande)
+num_profile <- df_km |>
+  dplyr::group_by(cluster) |>
+  dplyr::summarise(
+    dplyr::across(
+      dplyr::all_of(num_vars),
+      list(
+        mean = ~ mean(.x, na.rm = TRUE),
+        median = ~ median(.x, na.rm = TRUE),
+        sd = ~ sd(.x, na.rm = TRUE)
+      ),
+      .names = "{.col}_{.fn}"
+    ),
+    .groups = "drop"
+  )
+
+# b) Tabla compacta solo con variables clave (recomendada para describir clusters)
+num_profile_key <- df_km |>
+  dplyr::group_by(cluster) |>
+  dplyr::summarise(
+    dplyr::across(
+      dplyr::all_of(key_vars),
+      list(
+        mean = ~ mean(.x, na.rm = TRUE),
+        median = ~ median(.x, na.rm = TRUE)
+      ),
+      .names = "{.col}_{.fn}"
+    ),
+    n = dplyr::n(),
+    .groups = "drop"
+  ) |>
+  dplyr::arrange(cluster)
+
+num_profile_key
+
+# --- 3) Perfil CATEGÓRICO por cluster (frecuencias y porcentajes) ---
+cat_vars_all <- names(df_km)[sapply(df_km, function(x) is.character(x) || is.factor(x))]
+cat_vars_all <- setdiff(cat_vars_all, "cluster")
+
+# quedarnos con categóricas "manejables" (<=20 niveles) para que la tabla sea interpretable
+cat_vars <- cat_vars_all[sapply(df_km[cat_vars_all], function(x) dplyr::n_distinct(x, na.rm = TRUE) <= 20)]
+cat_vars
+
+# Generar tablas por cada variable categórica (top categorías por cluster)
+cat_tables <- list()
+
+if(length(cat_vars) == 0){
+  cat("No se detectaron variables categóricas de baja cardinalidad (<=20 niveles).\n")
+} else {
+  for(v in cat_vars){
+    tab <- df_km |>
+      dplyr::count(cluster, .data[[v]], name = "n") |>
+      dplyr::group_by(cluster) |>
+      dplyr::mutate(pct = n / sum(n)) |>
+      dplyr::arrange(cluster, dplyr::desc(pct))
+    
+    # quedarnos con el top 3 por cluster para que sea más fácil escribir la interpretación
+    tab_top3 <- tab |>
+      dplyr::group_by(cluster) |>
+      dplyr::slice_head(n = 3) |>
+      dplyr::ungroup()
+    
+    cat_tables[[v]] <- tab_top3
+  }
+}
+
+# Imprimir todas las tablas categóricas top 3 (si existen)
+if(length(cat_tables) > 0){
+  names(cat_tables)
+  cat_tables
+}
+```
 
