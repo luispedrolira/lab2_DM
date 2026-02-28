@@ -226,6 +226,71 @@ Estos resultados son útiles para CineVision Studios, ya que permiten comprender
 
 
 
+### 4. Otros algoritmos de aprendizaje no supervisado
+### 4.1 Aplicación de UMAP
+```{r}
+# Instalar si no está
+if(!require(umap)) install.packages("umap", dependencies = TRUE)
+library(umap)
+
+set.seed(123)
+
+# Usamos la misma matriz X escalada del clustering
+# (ya está transformada y estandarizada)
+
+# Configuración UMAP
+umap_config <- umap.defaults
+umap_config$n_neighbors <- 15
+umap_config$min_dist <- 0.1
+umap_config$metric <- "euclidean"
+
+# Aplicar UMAP
+umap_result <- umap(X, config = umap_config)
+
+# Convertir a dataframe
+umap_df <- as.data.frame(umap_result$layout)
+colnames(umap_df) <- c("UMAP1", "UMAP2")
+
+# Agregar clusters de k-means para interpretación
+umap_df$cluster <- factor(km_fit$cluster)
+
+# Visualización
+library(ggplot2)
+
+ggplot(umap_df, aes(x = UMAP1, y = UMAP2, color = cluster)) +
+  geom_point(alpha = 0.6, size = 1.5) +
+  theme_minimal() +
+  labs(title = "Proyección UMAP de las películas",
+       subtitle = "Coloreado por clusters k-means",
+       x = "UMAP 1",
+       y = "UMAP 2")
+```
+
+Justificación del uso de UMAP
+
+Se seleccionó el algoritmo UMAP (Uniform Manifold Approximation and Projection) debido a que el conjunto de datos presenta múltiples variables numéricas con posibles relaciones no lineales. Mientras que el PCA únicamente captura relaciones lineales, UMAP permite preservar tanto estructura local como global del espacio de alta dimensión, facilitando la visualización de patrones complejos.
+
+Dado que el dataset contiene casi 20,000 películas, UMAP resulta más eficiente y estable que alternativas como t-SNE, especialmente en términos de tiempo computacional y preservación de estructura global.
+
+Por estas razones, UMAP es adecuado para explorar la geometría interna del dataset y validar la existencia de estructuras latentes más allá de las detectadas por clustering tradicional.
+
+
+### 4.2 Interpretación de los resultados
+La proyección UMAP muestra una estructura claramente no aleatoria en los datos, evidenciando regiones densas y separaciones visibles entre grupos de películas. Al colorear los puntos según los clusters obtenidos por k-means, se observa que varios grupos presentan buena separación espacial, lo cual valida la consistencia del clustering realizado previamente.
+
+En particular, algunos clusters aparecen concentrados en zonas bien delimitadas del espacio UMAP, lo que indica alta cohesión interna y similitud entre las películas que los componen. Otros grupos muestran cierto grado de superposición, lo cual es esperado en datasets reales donde las fronteras entre segmentos no son completamente rígidas.
+
+Un hallazgo relevante es que la estructura revelada por UMAP confirma que las películas pueden diferenciarse en múltiples dimensiones simultáneamente (impacto comercial, complejidad de producción, estructura del elenco, etc.), lo que respalda la segmentación obtenida anteriormente.
+
+Desde una perspectiva estratégica para CineVision Studios, estos resultados sugieren que el mercado cinematográfico no es homogéneo, sino que existen nichos bien definidos. Esta visualización puede utilizarse para:
+
+Detectar segmentos de películas similares.
+
+Identificar posibles outliers (producciones atípicas).
+
+Apoyar decisiones de posicionamiento y desarrollo de nuevos proyectos.
+
+En conclusión, la aplicación de UMAP aporta valor exploratorio y confirma la existencia de estructura interna en el dataset, reforzando los hallazgos obtenidos mediante clustering y PCA.
 
 
 ```{r Seleccion de variables}}
