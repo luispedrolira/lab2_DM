@@ -46,37 +46,75 @@ datos <- read.csv("movies_2026.csv", stringsAsFactors = FALSE)
 ###3.1 Selección de Variables y Preprocesamiento
 
 ```{r include = FALSE}
-# Selección de variables numéricas
-vars_pca <- datos %>%
-  select(popularity,
-         budget,
-         revenue,
-         runtime,
-         voteCount,
-         voteAvg,
-         actorsPopularity,
-         actorsAmount,
-         castWomenAmount,
-         castMenAmount,
-         genresAmount,
-         productionCoAmount,
-         productionCountriesAmount,
-         releaseYear)
+# Base
+df_pca <- datos
 
-# Reemplazar strings vacíos por NA
-vars_pca[vars_pca == ""] <- NA
+# 1) Variables numéricas (puedes reutilizar tu selección previa)
+num_vars <- names(df_pca)[sapply(df_pca, is.numeric)]
+num_vars <- intersect(num_vars, c("popularity","budget","revenue","runtime",
+                                  "voteCount","voteAvg","actorsPopularity",
+                                  "actorsAmount","castWomenAmount","castMenAmount",
+                                  "genresAmount","productionCoAmount",
+                                  "productionCountriesAmount","releaseYear"))
+num_vars <- intersect(num_vars, names(df_pca))
 
-# Convertir todo a numérico de forma segura
-vars_pca <- data.frame(lapply(vars_pca, function(x) as.numeric(as.character(x))))
+# 2) Variables categóricas (baja cardinalidad)
+cat_vars_all <- names(df_pca)[sapply(df_pca, function(x) is.character(x) || is.factor(x))]
+cat_vars_all <- setdiff(cat_vars_all, c())  # si quieres excluir algo
 
-# Eliminar filas con NA
-vars_pca <- na.omit(vars_pca)
+# quedarnos con <=10 niveles para no explotar dimensiones
+cat_vars <- cat_vars_all[sapply(df_pca[cat_vars_all], function(x) dplyr::n_distinct(x, na.rm = TRUE) <= 10)]
+cat_vars <- intersect(cat_vars, names(df_pca))
+cat_vars
 
-# Verificar que todo sea numérico
-str(vars_pca)
+# 3) Agrupar niveles raros en "Other" para estabilidad (si aplica)
+collapse_rare <- function(x, min_pct = 0.02){
+  x <- as.character(x)
+  x[is.na(x)] <- "Missing"
+  tab <- prop.table(table(x))
+  rare_levels <- names(tab)[tab < min_pct]
+  x[x %in% rare_levels] <- "Other"
+  factor(x)
+}
 
-# Escalar
-vars_scaled <- scale(vars_pca)
+df_cat <- df_pca |> dplyr::select(dplyr::all_of(cat_vars)) |>
+  dplyr::mutate(dplyr::across(dplyr::everything(), collapse_rare))
+
+# 4) One-hot encoding
+if(length(cat_vars) > 0){
+  X_cat <- model.matrix(~ . - 1, data = df_cat) |> as.data.frame()
+} else {
+  X_cat <- data.frame()
+}
+
+# 5) Preparar numéricas (imputar + log1p a sesgadas + escalar)
+df_num <- df_pca |> dplyr::select(dplyr::all_of(num_vars))
+
+df_num[df_num == ""] <- NA
+df_num <- df_num |> dplyr::mutate(dplyr::across(dplyr::everything(),
+                                                ~ suppressWarnings(as.numeric(.x))))
+
+impute_median <- function(x) ifelse(is.na(x), median(x, na.rm = TRUE), x)
+df_num_imp <- df_num |> dplyr::mutate(dplyr::across(dplyr::everything(), impute_median))
+
+vars_log1p <- intersect(c("budget","revenue","voteCount","popularity","actorsPopularity"), num_vars)
+df_num_tr <- df_num_imp |> dplyr::mutate(dplyr::across(dplyr::all_of(vars_log1p),
+                                                       ~ log1p(pmax(.x, 0))))
+
+X_num <- scale(df_num_tr) |> as.data.frame()
+
+# 6) Matriz final y PCA
+if(ncol(X_cat) == 0){
+  X_mix <- X_num
+} else {
+  X_mix <- cbind(X_num, X_cat)
+}
+
+pca_mix <- prcomp(X_mix, center = TRUE, scale. = FALSE)
+summary(pca_mix)
+fviz_eig(pca_mix, addlabels = TRUE)
+
+
 ```
 
 ###3.2 Matriz de Correlación
