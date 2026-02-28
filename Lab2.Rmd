@@ -190,12 +190,8 @@ Estos resultados son útiles para CineVision Studios, ya que permiten comprender
 
 
 
-```{r Seleccion de variables}
-# Variables del PDF (posibles) incluyen: popularity, budget, revenue, runtime, vote_count, vote_avg,
-# actors_popularity, genres_amount, production_co_amount, production_countries_amount,
-# actors_amount, cast_women_amount, cast_men_amount, release_year, etc. :contentReference[oaicite:2]{index=2}
-
-# 1) Variables típicamente NO útiles para formar grupos (IDs / texto libre / URLs / listas enormes):
+```{r Seleccion de variables}}
+# 1) Variables  NO útiles para formar grupos (IDs / texto libre / URLs / listas enormes):
 vars_drop_if_exist <- c(
   "id", "original_title", "title", "homepage",
   "director", "actors", "actors_character",
@@ -205,7 +201,7 @@ vars_drop_if_exist <- c(
 
 df <- datos |> select(-any_of(vars_drop_if_exist))
 
-# 2) Define con qué variables numéricas vas a calcular los grupos (ajusta si tu dataset difiere)
+# 2) Define  variables numéricas para calcular los grupos 
 vars_num_raw <- c(
   "popularity", "budget", "revenue", "runtime",
   "vote_count", "vote_avg", "actors_popularity",
@@ -214,7 +210,7 @@ vars_num_raw <- c(
   "release_year"
 )
 
-# Qué variables de esas realmente existen en tu df:
+# Qué variables de esas realmente existen 
 vars_num <- intersect(vars_num_raw, names(df))
 vars_missing <- setdiff(vars_num_raw, names(df))
 
@@ -223,21 +219,20 @@ print(vars_num)
 cat("\nNuméricas NO encontradas (si esperabas verlas, revisa nombres):\n")
 print(vars_missing)
 
-# Deja solo filas con al menos algunas variables disponibles
 stopifnot(length(vars_num) >= 4)
 
 df_num <- df |> select(all_of(vars_num))
 
-# Asegurar numéricas (por si quedaron como character)
+# Asegurar numéricas 
 df_num <- df_num |> mutate(across(everything(), ~ suppressWarnings(as.numeric(.x))))
 
-# Imputación simple: medianas por columna (rápido y estable para clustering)
+# Imputación simple
 impute_median <- function(x){
   ifelse(is.na(x), median(x, na.rm = TRUE), x)
 }
 df_num_imp <- df_num |> mutate(across(everything(), impute_median))
 
-# Transformaciones para colas largas (muy típico en budget/revenue/vote_count/popularity)
+# Transformaciones para colas largas 
 vars_log1p <- intersect(c("budget", "revenue", "vote_count", "popularity", "actors_popularity"), vars_num)
 df_num_tr <- df_num_imp |> mutate(across(all_of(vars_log1p), ~ log1p(pmax(.x, 0))))
 
@@ -248,31 +243,35 @@ X <- as.matrix(X)
 cat("Dimensiones de X (filas, columnas):\n")
 print(dim(X))
 ```
+Para construir los grupos se trabajó únicamente con variables numéricas que describen magnitud y desempeño de una película. Se excluyeron variables de tipo identificador o texto porque no representan distancias comparables en el espacio numérico y pueden introducir ruido. Luego se realizó limpieza básica: se convirtieron cadenas vacías a NA, se forzó conversión segura a numérico y se imputaron faltantes con la mediana por variable para evitar perder demasiadas filas. Debido a que variables como presupuesto/ingresos/votos suelen tener colas largas, se aplicó log1p() para reducir asimetría y estabilizar distancias. Finalmente, se estandarizaron todas las variables para que ninguna domine el agrupamiento solo por estar en otra escala .
 
 ```{r Hopkins}
 
 set.seed(123)
 
-# Hopkins en muestra (rápido)
-idx_hop <- sample(seq_len(nrow(X)), min(3000, nrow(X)))
-X_hop <- X[idx_hop, , drop = FALSE]
-n_hop <- min(200, floor(0.1 * nrow(X_hop)))
+idx_tend <- sample(seq_len(nrow(X)), min(3000, nrow(X)))
+X_tend <- X[idx_tend, , drop = FALSE]
+n_tend <- min(200, floor(0.1 * nrow(X_tend)))
 
-hop <- clustertend::hopkins(X_hop, n = n_hop)
-hop
+tend <- factoextra::get_clust_tendency(X_tend, n = n_tend, graph = TRUE)
+tend$hopkins_stat   # Hopkins
+tend$plot           # VAT (imagen de disimilitud ordenada)
 ```
+Con Hopkins = 0.9568, la evidencia de tendencia a formar clusters es muy fuerte: un valor cercano a 1 indica que las distancias entre puntos no se comportan como si fueran aleatorias, sino que hay agrupamientos reales
+
+El VAT refuerza esa conclusión visualmente. En el mapa se observan bloques relativamente definidos separados por transiciones más claras, lo que suele interpretarse como la presencia de varios grupos con alta similitud interna y mayor disimilitud con otros grupos. 
 
 ```{r Grafica de Codo}
 k_max <- 12
 
-# Codo (WSS) - requisito :contentReference[oaicite:4]{index=4}
+# Codo (WSS) 
 factoextra::fviz_nbclust(X, kmeans, method = "wss", k.max = k_max) +
   ggtitle("Método del codo (WSS)")
 
 # (Opcional pero útil) Silhouette vs k para apoyar tu decisión
 factoextra::fviz_nbclust(X[sample(nrow(X), min(3000, nrow(X))), ], kmeans,
                          method = "silhouette", k.max = k_max) +
-  ggtitle("Apoyo: Silhouette promedio vs k (muestra)")
+  ggtitle(" Silhouette promedio vs k (muestra)")
 ```
 
 ```{r Elegir el K}
@@ -298,7 +297,7 @@ sil_tbl |> arrange(desc(avg_silhouette)) |> head(10)
 k_star <- sil_tbl |> arrange(desc(avg_silhouette)) |> slice(1) |> pull(k)
 cat("k elegido (por silhouette en muestra):", k_star, "\n")
 ```
-
+Con el método del codo  se observa una caída muy pronunciada de la variabilidad intra-cluster al pasar de k=1 → 2 → 3 y aún una mejora relevante hasta alrededor de k≈5; a partir de ahí la curva entra en una zona de rendimientos decrecientes, donde aumentar k reduce el WSS solo de forma marginal y la línea se vuelve mucho más “plana”. Sin embargo, al contrastar esa evidencia con la silueta promedio, el mejor valor se obtiene en k=7 con 0.635, ligeramente superior a k=6 (0.631) y claramente por encima de k=5 (0.590). Por eso se elige k=7: aunque el codo sugiere que desde ~5 ya no hay mejoras enormes, k=7 ofrece el mejor balance entre cohesión interna y separación entre grupos sin caer en una fragmentación excesiva, y además coincide con una zona donde el WSS ya está cerca del “plateau” .
 ```{r Agrupamiento}
 # K-means en TODO el dataset
 km_fit <- kmeans(X, centers = k_star, nstart = 50, iter.max = 200)
@@ -356,5 +355,10 @@ cat("Silhouette promedio (jerárquico, muestra):", round(avg_sil_hc, 4), "\n")
 factoextra::fviz_silhouette(sil_km) + ggtitle("Silueta - k-means (muestra)")
 factoextra::fviz_silhouette(sil_hc) + ggtitle("Silueta - Jerárquico (muestra)")
 ```
+Con k = 7, la comparación entre k-means y clustering jerárquico en la misma muestra muestra que k-means logra una calidad global ligeramente superior, ya que su silueta promedio fue 0.6331 frente a 0.6204 del jerárquico. Esa diferencia es consistente con lo que se observa en los gráficos de silueta: en k-means la mayoría de observaciones mantienen valores positivos y cercanos o por encima de la línea promedio, mientras que en jerárquico aparecen más casos con silueta negativa (especialmente en un cluster con silueta promedio baja ~0.39), lo que indica asignaciones menos claras y mayor solapamiento entre algunos grupos.
+
+A nivel de estructura de clusters, ambos métodos identifican al menos un grupo muy bien definido, lo cual sugiere que existe un segmento fuerte y consistente en los datos. Sin embargo, el jerárquico presenta un problema adicional: aparece un cluster de tamaño 1 con silueta promedio 0.00, lo que normalmente refleja un outlier o una separación artificial al cortar el dendrograma en k=7. Esto es importante porque, para segmentación práctica, no es deseable generar clusters extremadamente pequeños. En cambio, k-means produce tamaños más estables y evita ese “cluster singleton”, manteniendo grupos más utilizables para perfilado.
+
+El dendrograma sí aporta una ventaja interpretativa: permite ver fusiones y posibles macrogrupos, útil si el objetivo fuera explorar segmentaciones en varios niveles. Pero dado que el objetivo del laboratorio es obtener una partición final e interpretable, y considerando la mejor silueta promedio, menos asignaciones negativas, y la ausencia de clusters degenerados, se selecciona k-means como el método principal para la interpretación final de clusters; el jerárquico se mantiene como referencia complementaria para validar que existe estructura y para explorar agrupamientos alternativos.
 
 
