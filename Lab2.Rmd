@@ -186,6 +186,10 @@ En conjunto, el PCA revela que las películas pueden caracterizarse principalmen
 
 Estos resultados son útiles para CineVision Studios, ya que permiten comprender cuáles factores explican mayor variabilidad en el mercado cinematográfico y pueden servir como base para futuros modelos predictivos o segmentaciones estratégicas.
 
+
+
+
+
 ```{r Seleccion de variables}
 # Variables del PDF (posibles) incluyen: popularity, budget, revenue, runtime, vote_count, vote_avg,
 # actors_popularity, genres_amount, production_co_amount, production_countries_amount,
@@ -352,4 +356,5 @@ cat("Silhouette promedio (jerárquico, muestra):", round(avg_sil_hc, 4), "\n")
 factoextra::fviz_silhouette(sil_km) + ggtitle("Silueta - k-means (muestra)")
 factoextra::fviz_silhouette(sil_hc) + ggtitle("Silueta - Jerárquico (muestra)")
 ```
+
 
