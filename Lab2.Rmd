@@ -504,3 +504,108 @@ if(length(cat_tables) > 0){
 }
 ```
 
+#Apriori
+```{r}
+if(!require(arules)) install.packages("arules", dependencies = TRUE)
+if(!require(arulesViz)) install.packages("arulesViz", dependencies = TRUE)
+if(!require(dplyr)) install.packages("dplyr", dependencies = TRUE)
+if(!require(stringr)) install.packages("stringr", dependencies = TRUE)
+
+df_rules <- datos
+
+# 1) Seleccionar categóricas de baja cardinalidad (<= 20 niveles)
+cat_vars_all <- names(df_rules)[sapply(df_rules, function(x) is.character(x) || is.factor(x))]
+cat_vars_all <- setdiff(cat_vars_all, c("title","overview","tagline","id"))  # por si existen
+
+cat_vars <- cat_vars_all[sapply(df_rules[cat_vars_all], function(x) dplyr::n_distinct(x, na.rm = TRUE) <= 20)]
+
+# 2) Seleccionar numéricas clave y discretizarlas (si existen)
+num_candidates <- c("popularity","budget","revenue","runtime","voteCount","voteAvg","releaseYear",
+                    "actorsAmount","genresAmount","productionCoAmount","productionCountriesAmount")
+num_vars <- intersect(num_candidates, names(df_rules))
+num_vars <- num_vars[sapply(df_rules[num_vars], is.numeric)]
+
+# función para discretizar en cuantiles (robusto a escalas)
+disc_q <- function(x, k = 4){
+  x <- suppressWarnings(as.numeric(x))
+  x[is.na(x)] <- median(x, na.rm = TRUE)
+  arules::discretize(x, method = "frequency", categories = k, ordered = TRUE)
+}
+
+df_cat <- df_rules |> dplyr::select(dplyr::all_of(cat_vars)) |>
+  dplyr::mutate(dplyr::across(dplyr::everything(), ~ as.factor(tidyr::replace_na(as.character(.x), "Missing"))))
+
+df_num_disc <- NULL
+if(length(num_vars) > 0){
+  df_num_disc <- df_rules |> dplyr::select(dplyr::all_of(num_vars)) |>
+    dplyr::mutate(dplyr::across(dplyr::everything(), ~ disc_q(.x, k = 4)))
+}
+
+# 3) Dataset final para transacciones
+df_items <- dplyr::bind_cols(df_cat, df_num_disc)
+
+# 4) Convertir a transacciones
+trans <- as(df_items, "transactions")
+trans
+```
+```{r}
+item_freq <- sort(arules::itemFrequency(trans), decreasing = TRUE)
+head(item_freq, 20)
+
+# Plot rápido 
+arules::itemFrequencyPlot(trans, topN = 20, type = "absolute")
+```
+
+```{r}
+param_grid <- list(
+  list(supp = 0.05, conf = 0.6),
+  list(supp = 0.03, conf = 0.6),
+  list(supp = 0.02, conf = 0.65),
+  list(supp = 0.01, conf = 0.7)
+)
+
+rules_list <- list()
+
+for(i in seq_along(param_grid)){
+  s <- param_grid[[i]]$supp
+  c <- param_grid[[i]]$conf
+  
+  r <- arules::apriori(
+    trans,
+    parameter = list(support = s, confidence = c, minlen = 2, maxlen = 5, target = "rules")
+  )
+  
+  # Filtrar reglas débiles (lift > 1 mejora respecto a azar)
+  r <- arules::subset(r, subset = lift > 1.05)
+  rules_list[[paste0("supp_", s, "_conf_", c)]] <- r
+}
+
+# Resumen de cuántas reglas por configuración
+sapply(rules_list, length)
+```
+```{r}
+# Elegir la configuración con "buen balance" (ajusta si quieres)
+key_name <- names(rules_list)[which.max(sapply(rules_list, length))]
+rules_best <- rules_list[[key_name]]
+
+key_name
+summary(rules_best)
+
+# Top 15 por lift
+top_lift <- sort(rules_best, by = "lift", decreasing = TRUE)[1:min(15, length(rules_best))]
+inspect(top_lift)
+
+# Top 15 por confianza
+top_conf <- sort(rules_best, by = "confidence", decreasing = TRUE)[1:min(15, length(rules_best))]
+inspect(top_conf)
+```
+```{r}
+class(rules_best)
+
+# 2) Scatterplot: soporte (x) vs confianza (y), coloreado por lift
+plot(rules_best,
+     method  = "scatterplot",
+     measure = c("support", "confidence"),
+     shading = "lift")
+```
+
