@@ -674,3 +674,27 @@ plot(rules_best,
      shading = "lift")
 ```
 
+
+
+## 5. Hallazgos Integrados y Recomendaciones Estratégicas para CineVision
+
+***Hallazgos Integrados y Recomendaciones Estratégicas para CineVision***
+
+El análisis realizado combinó técnicas de clustering, análisis de componentes principales, reglas de asociación y un algoritmo adicional de aprendizaje no supervisado, permitiendo obtener una visión integral del comportamiento del mercado cinematográfico.
+
+Integración de resultados
+	•	El clustering permitió identificar perfiles diferenciados de películas en función de su desempeño comercial y características estructurales.
+	•	El PCA reveló que las dimensiones más relevantes del dataset están asociadas principalmente al impacto comercial y a la complejidad productiva.
+	•	Las reglas de asociación evidenciaron relaciones frecuentes entre variables como presupuesto, ingresos y popularidad del elenco, reforzando los hallazgos del agrupamiento.
+	•	El algoritmo adicional aplicado permitió visualizar patrones latentes y confirmar la existencia de estructuras internas coherentes en los datos.
+
+En conjunto, los resultados muestran que el desempeño financiero y la estructura del elenco son factores determinantes en la segmentación del mercado.
+
+
+
+***Recomendaciones concretas para CineVision***
+	1.	Segmentar proyectos según perfil de inversión (alto presupuesto vs producciones independientes).
+	2.	Fortalecer estrategias de marketing en películas con alta valoración crítica pero bajo revenue.
+	3.	Considerar la popularidad del elenco como variable clave en decisiones de producción.
+	4.	Evaluar oportunidades en producciones internacionales cuando se detecten patrones asociados a mayor retorno.
+	5.	Utilizar técnicas de reducción de dimensionalidad como base para futuros modelos predictivos de éxito comercial.
